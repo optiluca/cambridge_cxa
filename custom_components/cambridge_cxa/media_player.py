@@ -154,7 +154,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     add_devices([CambridgeCXADevice(host, name, username, cxatype, cxnhost)])
 
 
-class CambridgeCXADevice(MediaPlayerDevice):
+class CambridgeCXADevice(MediaPlayerEntity):
     def __init__(self, host, name, username, cxatype, cxnhost):
         _LOGGER.info("Setting up Cambridge CXA")
         self._host = host
