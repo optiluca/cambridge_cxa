@@ -11,6 +11,7 @@ import logging
 import urllib.request
 import requests
 import subprocess
+import serial
 import voluptuous as vol
 
 from homeassistant.components.media_player import MediaPlayerEntity, PLATFORM_SCHEMA
@@ -61,29 +62,29 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 NORMAL_INPUTS_CXA61 = {
-    "A1" : "#03,04,00",
-    "A2" : "#03,04,01",
-    "A3" : "#03,04,02",
-    "A4" : "#03,04,03",
-    "D1" : "#03,04,04",
-    "D2" : "#03,04,05",
-    "D3" : "#03,04,06",
-    "Bluetooth" : "#03,04,14",
-    "USB" : "#03,04,16",
-    "MP3" : "#03,04,10"
+    "A1" : "#3,04,00",
+    "A2" : "#3,04,01",
+    "A3" : "#3,04,02",
+    "A4" : "#3,04,03",
+    "D1" : "#3,04,04",
+    "D2" : "#3,04,05",
+    "D3" : "#3,04,06",
+    "Bluetooth" : "#3,04,14",
+    "USB" : "#3,04,16",
+    "MP3" : "#3,04,10"
 }
 
 NORMAL_INPUTS_CXA81 = {
-    "A1" : "#03,04,00",
-    "A2" : "#03,04,01",
-    "A3" : "#03,04,02",
-    "A4" : "#03,04,03",
-    "D1" : "#03,04,04",
-    "D2" : "#03,04,05",
-    "D3" : "#03,04,06",
-    "Bluetooth" : "#03,04,14",
-    "USB" : "#03,04,16",
-    "XLR" : "#03,04,20"
+    "A1" : "#3,04,00",
+    "A2" : "#3,04,01",
+    "A3" : "#3,04,02",
+    "A4" : "#3,04,03",
+    "D1" : "#3,04,04",
+    "D2" : "#3,04,05",
+    "D3" : "#3,04,06",
+    "Bluetooth" : "#3,04,14",
+    "USB" : "#3,04,16",
+    "XLR" : "#3,04,20"
 }
 
 NORMAL_INPUTS_AMP_REPLY_CXA61 = {
@@ -118,14 +119,14 @@ SOUND_MODES = {
     "B" : "#1,25,2"
 }
 
-AMP_CMD_GET_PWSTATE = "#01,01"
-AMP_CMD_GET_CURRENT_SOURCE = "#03,01"
-AMP_CMD_GET_MUTE_STATE = "#01,03"
+AMP_CMD_GET_PWSTATE = "#1,01"
+AMP_CMD_GET_CURRENT_SOURCE = "#3,01"
+AMP_CMD_GET_MUTE_STATE = "#1,03"
 
-AMP_CMD_SET_MUTE_ON = "#01,04,1"
-AMP_CMD_SET_MUTE_OFF = "#01,04,0"
-AMP_CMD_SET_PWR_ON = "#01,02,1"
-AMP_CMD_SET_PWR_OFF = "#01,02,0"
+AMP_CMD_SET_MUTE_ON = "#1,04,1"
+AMP_CMD_SET_MUTE_OFF = "#1,04,0"
+AMP_CMD_SET_PWR_ON = "#1,02,1"
+AMP_CMD_SET_PWR_OFF = "#1,02,0"
 
 AMP_REPLY_PWR_ON = "#02,01,1"
 AMP_REPLY_PWR_STANDBY = "#02,01,0"
@@ -177,20 +178,32 @@ class CambridgeCXADevice(MediaPlayerEntity):
         self.update()
 
     def update(self):
-        self._pwstate = self.ssh_command(AMP_CMD_GET_PWSTATE)[0:8]
+        self._pwstate = self.serial_command(AMP_CMD_GET_PWSTATE)[0:8]
         _LOGGER.debug("CXA - update called. State is: %s", self._pwstate)
         if AMP_REPLY_PWR_ON in self._pwstate:
-            self._mediasource = self.ssh_command(AMP_CMD_GET_CURRENT_SOURCE)[0:9]
+            self._mediasource = self.serial_command(AMP_CMD_GET_CURRENT_SOURCE)[0:9]
             _LOGGER.debug("CXA - get current source called. Source is: %s", self._mediasource)
             
-            self._muted = self.ssh_command(AMP_CMD_GET_MUTE_STATE)[0:8]
+            self._muted = self.serial_command(AMP_CMD_GET_MUTE_STATE)[0:8]
             _LOGGER.debug("CXA - current mute state is: %s", self._muted)
 
-    def ssh_command(self, command):
+    def serial_command(self, command):
         """Establish an ssh connection and sends `command`."""
-        _LOGGER.debug("Sending command: %s", command)
-        result = subprocess.run(['ssh', self._username + '@' + self._host, 'tty=/dev/ttyUSB0; exec 4<$tty 5>$tty; stty -F $tty 9600 -echo; echo "' + command + '" >&5; read reply <&4; echo $reply'], shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-        return result.stdout.decode()
+        # Drop SSH, the same PI is running the amp and home assistant!
+
+        cmd = f'{command}\r'.encode('utf-8')
+        _LOGGER.debug("Sending command: %s", cmd)
+
+        with serial.Serial('/dev/ttyUSB0', 9600, timeout=2) as ser:
+            if ser.inWaiting() > 0:
+                ser.flushInput()
+            ser.write(cmd)
+            ser.flush()
+            res = ser.read_until(b'\r')
+        res = res.decode()
+        _LOGGER.debug("Got reply: %s", res)
+        return res
+
 
     def url_command(self, command):
         _LOGGER.debug("Sending command: %s to: %s", command, self._cxnhost)
@@ -232,21 +245,21 @@ class CambridgeCXADevice(MediaPlayerEntity):
 
     def mute_volume(self, mute):
         if mute:
-            self.ssh_command(AMP_CMD_SET_MUTE_ON)
+            self.serial_command(AMP_CMD_SET_MUTE_ON)
         else:
-            self.ssh_command(AMP_CMD_SET_MUTE_OFF)
+            self.serial_command(AMP_CMD_SET_MUTE_OFF)
 
     def select_sound_mode(self, sound_mode):
-        self.ssh_command(self._sound_mode_list[sound_mode])
+        self.serial_command(self._sound_mode_list[sound_mode])
 
     def select_source(self, source):
-        self.ssh_command(self._source_list[source])
+        self.serial_command(self._source_list[source])
 
     def turn_on(self):
-        self.ssh_command(AMP_CMD_SET_PWR_ON)
+        self.serial_command(AMP_CMD_SET_PWR_ON)
 
     def turn_off(self):
-        self.ssh_command(AMP_CMD_SET_PWR_OFF)
+        self.serial_command(AMP_CMD_SET_PWR_OFF)
 
     def volume_up(self):
         if self._cxnhost != "not set":
