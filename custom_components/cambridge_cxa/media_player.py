@@ -29,6 +29,7 @@ from homeassistant.const import (
     CONF_HOST,
     CONF_NAME,
     CONF_USERNAME,
+    CONF_PASSWORD,
     CONF_SLAVE,
     CONF_TYPE,
     STATE_OFF,
@@ -55,6 +56,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_USERNAME): cv.string,
+        vol.Required(CONF_PASSWORD): cv.string,
         vol.Required(CONF_TYPE): cv.string,
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Optional(CONF_SLAVE, default="not set"): cv.string,
@@ -137,6 +139,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     host = config.get(CONF_HOST)
     name = config.get(CONF_NAME)
     username = config.get(CONF_USERNAME)
+    password = config.get(CONF_PASSWORD)
     cxatype = config.get(CONF_TYPE)
     cxnhost = config.get(CONF_SLAVE)
 
@@ -152,11 +155,11 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         _LOGGER.error("No CXA type found in configuration.yaml file. Possible values are CXA61, CXA81")
         return
 
-    add_devices([CambridgeCXADevice(host, name, username, cxatype, cxnhost)])
+    add_devices([CambridgeCXADevice(host, name, username, password, cxatype, cxnhost)])
 
 
 class CambridgeCXADevice(MediaPlayerEntity):
-    def __init__(self, host, name, username, cxatype, cxnhost):
+    def __init__(self, host, name, username, password, cxatype, cxnhost):
         _LOGGER.info("Setting up Cambridge CXA")
         self._host = host
         self._mediasource = ""
@@ -174,6 +177,7 @@ class CambridgeCXADevice(MediaPlayerEntity):
         self._sound_mode_list = SOUND_MODES.copy()
         self._state = STATE_OFF
         self._username = username
+        self._password = password
         self._cxnhost = cxnhost
         self.update()
 
@@ -262,13 +266,13 @@ class CambridgeCXADevice(MediaPlayerEntity):
         self.serial_command(AMP_CMD_SET_PWR_OFF)
 
     def volume_up(self):
-        if self._cxnhost != "not set":
-            self.url_command("smoip/zone/state?pre_amp_mode=false")
-            self.url_command("smoip/zone/state?volume_step_change=+1")
-            self.url_command("smoip/zone/state?pre_amp_mode=true")
+        self._control_volume('UP')
 
     def volume_down(self):
-        if self._cxnhost != "not set":
-            self.url_command("smoip/zone/state?pre_amp_mode=false")
-            self.url_command("smoip/zone/state?volume_step_change=-1")
-            self.url_command("smoip/zone/state?pre_amp_mode=true")
+        self._control_volume('DOWN')
+
+    def _control_volume(self, direction):
+        try:
+            subprocess.run(['ssh', f'{self._username}@{self._host}', 'irsend', '--count=3', 'SEND_ONCE', 'CXA81', f'VOLUME_{direction}'], check=True)
+        except Exception as e:
+            _LOGGER.error(f"Failed to modify volume!: {e}")
