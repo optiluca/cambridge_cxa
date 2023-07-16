@@ -6,7 +6,7 @@ connection to the amplifier.
 For more details about this platform, please refer to the documentation at
 https://github.com/lievencoghe/cambridge_cxa
 """
-
+import os
 import logging
 import urllib.request
 import requests
@@ -272,7 +272,9 @@ class CambridgeCXADevice(MediaPlayerEntity):
         self._control_volume('DOWN')
 
     def _control_volume(self, direction):
-        try:
-            subprocess.run(['ssh', f'{self._username}@{self._host}', 'irsend', '--count=3', 'SEND_ONCE', 'CXA81', f'VOLUME_{direction}'], check=True)
-        except Exception as e:
-            _LOGGER.error(f"Failed to modify volume!: {e}")
+        id_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ssh_keys/id_rsa')
+        output = subprocess.run(['ssh', '-i', id_path, f'{self._username}@{self._host}', 'irsend', '--count=1', 'SEND_ONCE', 'CXA81', f'VOLUME_{direction}'], capture_output=True)
+        if output.returncode == 0:
+            _LOGGER.debug(output)
+        else:
+            _LOGGER.warning(output)
