@@ -9,7 +9,7 @@ https://github.com/lievencoghe/cambridge_cxa
 import os
 import logging
 import urllib.request
-import requests
+import paho.mqtt.client as mqtt
 import subprocess
 import serial
 import voluptuous as vol
@@ -161,7 +161,11 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 class CambridgeCXADevice(MediaPlayerEntity):
     def __init__(self, host, name, username, password, cxatype, cxnhost):
         _LOGGER.info("Setting up Cambridge CXA")
-        self._host = host
+        
+        self._client = mqtt.Client(client_id='ha_cambridge_cxa')
+        self._client.connect(host) # MQTT host
+        self._volume_topic = 'media/cxa81/command/volume'
+
         self._mediasource = ""
         self._speakersactive = ""
         self._muted = AMP_REPLY_MUTE_OFF
@@ -266,15 +270,7 @@ class CambridgeCXADevice(MediaPlayerEntity):
         self.serial_command(AMP_CMD_SET_PWR_OFF)
 
     def volume_up(self):
-        self._control_volume('UP')
+        self._client.publish(self._volume_topic, 'VOLUME_UP')
 
     def volume_down(self):
-        self._control_volume('DOWN')
-
-    def _control_volume(self, direction):
-        id_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ssh_keys/id_rsa')
-        output = subprocess.run(['ssh', '-i', id_path, f'{self._username}@{self._host}', 'irsend', '--count=1', 'SEND_ONCE', 'CXA81', f'VOLUME_{direction}'], capture_output=True)
-        if output.returncode == 0:
-            _LOGGER.debug(output)
-        else:
-            _LOGGER.warning(output)
+        self._client.publish(self._volume_topic, 'VOLUME_DOWN')
