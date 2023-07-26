@@ -6,11 +6,9 @@ connection to the amplifier.
 For more details about this platform, please refer to the documentation at
 https://github.com/lievencoghe/cambridge_cxa
 """
-import os
 import logging
 import urllib.request
-import paho.mqtt.client as mqtt
-import subprocess
+from paho.mqtt import publish
 import serial
 import voluptuous as vol
 
@@ -161,10 +159,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 class CambridgeCXADevice(MediaPlayerEntity):
     def __init__(self, host, name, username, password, cxatype, cxnhost):
         _LOGGER.info("Setting up Cambridge CXA")
-        
-        self._client = mqtt.Client(client_id='ha_cambridge_cxa')
-        self._client.connect(host) # MQTT host
-        self._volume_topic = 'media/cxa81/command/volume'
+        self._host = host
 
         self._mediasource = ""
         self._speakersactive = ""
@@ -269,8 +264,13 @@ class CambridgeCXADevice(MediaPlayerEntity):
     def turn_off(self):
         self.serial_command(AMP_CMD_SET_PWR_OFF)
 
+    def _send_mqtt_message(self, message):
+        publish.single('media/cxa81/command/volume', payload=message, hostname=self._host, client_id='ha_cambridge_cxa')
+
     def volume_up(self):
-        self._client.publish(self._volume_topic, 'VOLUME_UP')
+        _LOGGER.debug("Sending VOLUME UP")
+        self._send_mqtt_message('VOLUME_UP')
 
     def volume_down(self):
-        self._client.publish(self._volume_topic, 'VOLUME_DOWN')
+        _LOGGER.debug("Sending VOLUME DOWN")
+        self._send_mqtt_message('VOLUME_DOWN')
