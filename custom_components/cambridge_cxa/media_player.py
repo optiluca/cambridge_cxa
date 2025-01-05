@@ -12,16 +12,7 @@ from paho.mqtt import publish
 import serial
 import voluptuous as vol
 
-from homeassistant.components.media_player import MediaPlayerEntity, PLATFORM_SCHEMA
-
-from homeassistant.components.media_player.const import (
-    SUPPORT_SELECT_SOURCE,
-    SUPPORT_SELECT_SOUND_MODE,
-    SUPPORT_TURN_OFF,
-    SUPPORT_TURN_ON,
-    SUPPORT_VOLUME_MUTE,
-    SUPPORT_VOLUME_STEP,
-)
+from homeassistant.components.media_player import MediaPlayerEntity, MediaPlayerEntityFeature, PLATFORM_SCHEMA
 
 from homeassistant.const import (
     CONF_HOST,
@@ -40,12 +31,12 @@ __version__ = "0.2"
 _LOGGER = logging.getLogger(__name__)
 
 SUPPORT_CXA = (
-    SUPPORT_SELECT_SOURCE
-    | SUPPORT_SELECT_SOUND_MODE
-    | SUPPORT_TURN_OFF
-    | SUPPORT_TURN_ON
-    | SUPPORT_VOLUME_MUTE
-    | SUPPORT_VOLUME_STEP
+    MediaPlayerEntityFeature.SELECT_SOURCE
+    | MediaPlayerEntityFeature.SELECT_SOUND_MODE
+    | MediaPlayerEntityFeature.TURN_OFF
+    | MediaPlayerEntityFeature.TURN_ON
+    | MediaPlayerEntityFeature.VOLUME_MUTE
+    | MediaPlayerEntityFeature.VOLUME_STEP
 )
 
 DEFAULT_NAME = "Cambridge Audio CXA"
