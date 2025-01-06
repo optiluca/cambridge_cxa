@@ -1,0 +1,5 @@
+# apt install python3-dev
+paho-mqtt
+lirc
+RPi.GPIO
+pyserial

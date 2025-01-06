@@ -1,0 +1,16 @@
+version: "3"
+
+services:
+  cxa-controller:
+    image: cxa-controller:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - /dev/lirc0:/dev/lirc0
+      - /var/run/lirc/lircd:/var/run/lirc/lircd
+      - /etc/lirc/:/etc/lirc/
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    privileged: true
+    restart: unless-stopped
+    command: python -u controller.py

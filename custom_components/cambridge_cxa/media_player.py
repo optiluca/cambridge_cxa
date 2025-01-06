@@ -6,10 +6,11 @@ connection to the amplifier.
 For more details about this platform, please refer to the documentation at
 https://github.com/lievencoghe/cambridge_cxa
 """
+import json
 import logging
 import urllib.request
-from paho.mqtt import publish
-import serial
+import paho.mqtt.client as mqtt
+# import serial
 import voluptuous as vol
 
 from homeassistant.components.media_player import MediaPlayerEntity, MediaPlayerEntityFeature, PLATFORM_SCHEMA
@@ -26,7 +27,7 @@ from homeassistant.const import (
 )
 import homeassistant.helpers.config_validation as cv
 
-__version__ = "0.2"
+__version__ = "0.3"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -146,6 +147,10 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
     add_devices([CambridgeCXADevice(host, name, username, password, cxatype, cxnhost)])
 
+def on_connect(client, *args, **kwargs):
+    print("on connect: subscribing to base topic...")
+    client.subscribe('media/cxa81/response')
+    print("on connect: subscribed!")
 
 class CambridgeCXADevice(MediaPlayerEntity):
     def __init__(self, host, name, username, password, cxatype, cxnhost):
@@ -169,35 +174,40 @@ class CambridgeCXADevice(MediaPlayerEntity):
         self._username = username
         self._password = password
         self._cxnhost = cxnhost
+
+        self.client = mqtt.Client(client_id="ha_cambridge_cxa")
+        self.client.on_connect = on_connect
+        self.client.on_message = self.on_response
+        self.client.connect(host)
+
+        self.client.loop_start()
+
         self.update()
+    
+    def on_response(self, client, userdata, message):
+        topic = message.topic
+        msg = json.loads(str(message.payload.decode("utf-8")))
+        _LOGGER.debug(f"Message received on topic {topic}: {msg}")
+
+        if AMP_CMD_GET_PWSTATE in msg:
+            self._pwstate = msg[AMP_CMD_GET_PWSTATE][0:8]
+            _LOGGER.debug("CXA - update called. State is: %s", self._pwstate)
+        
+        if AMP_REPLY_PWR_ON in self._pwstate:
+            if AMP_CMD_GET_CURRENT_SOURCE in msg:
+                self._mediasource = msg[AMP_CMD_GET_CURRENT_SOURCE][0:9]
+                _LOGGER.debug("CXA - get current source called. Source is: %s", self._mediasource)
+            
+            if AMP_CMD_GET_MUTE_STATE in msg:
+                self._muted = msg[AMP_CMD_GET_MUTE_STATE][0:8]
+                _LOGGER.debug("CXA - current mute state is: %s", self._muted)
+
+
 
     def update(self):
-        self._pwstate = self.serial_command(AMP_CMD_GET_PWSTATE)[0:8]
-        _LOGGER.debug("CXA - update called. State is: %s", self._pwstate)
-        if AMP_REPLY_PWR_ON in self._pwstate:
-            self._mediasource = self.serial_command(AMP_CMD_GET_CURRENT_SOURCE)[0:9]
-            _LOGGER.debug("CXA - get current source called. Source is: %s", self._mediasource)
-            
-            self._muted = self.serial_command(AMP_CMD_GET_MUTE_STATE)[0:8]
-            _LOGGER.debug("CXA - current mute state is: %s", self._muted)
-
-    def serial_command(self, command):
-        """Establish an ssh connection and sends `command`."""
-        # Drop SSH, the same PI is running the amp and home assistant!
-
-        cmd = f'{command}\r'.encode('utf-8')
-        _LOGGER.debug("Sending command: %s", cmd)
-
-        with serial.Serial('/dev/ttyUSB0', 9600, timeout=2) as ser:
-            if ser.inWaiting() > 0:
-                ser.flushInput()
-            ser.write(cmd)
-            ser.flush()
-            res = ser.read_until(b'\r')
-        res = res.decode()
-        _LOGGER.debug("Got reply: %s", res)
-        return res
-
+        self._send_mqtt_command_message(AMP_CMD_GET_PWSTATE)
+        self._send_mqtt_command_message(AMP_CMD_GET_CURRENT_SOURCE)
+        self._send_mqtt_command_message(AMP_CMD_GET_MUTE_STATE)
 
     def url_command(self, command):
         _LOGGER.debug("Sending command: %s to: %s", command, self._cxnhost)
@@ -239,29 +249,32 @@ class CambridgeCXADevice(MediaPlayerEntity):
 
     def mute_volume(self, mute):
         if mute:
-            self.serial_command(AMP_CMD_SET_MUTE_ON)
+            self._send_mqtt_command_message(AMP_CMD_SET_MUTE_ON)
         else:
-            self.serial_command(AMP_CMD_SET_MUTE_OFF)
+            self._send_mqtt_command_message(AMP_CMD_SET_MUTE_OFF)
 
     def select_sound_mode(self, sound_mode):
-        self.serial_command(self._sound_mode_list[sound_mode])
+        self._send_mqtt_command_message(self._sound_mode_list[sound_mode])
 
     def select_source(self, source):
-        self.serial_command(self._source_list[source])
+        self._send_mqtt_command_message(self._source_list[source])
 
     def turn_on(self):
-        self.serial_command(AMP_CMD_SET_PWR_ON)
+        self._send_mqtt_command_message(AMP_CMD_SET_PWR_ON)
 
     def turn_off(self):
-        self.serial_command(AMP_CMD_SET_PWR_OFF)
+        self._send_mqtt_command_message(AMP_CMD_SET_PWR_OFF)
 
-    def _send_mqtt_message(self, message):
-        publish.single('media/cxa81/command/volume', payload=message, hostname=self._host, client_id='ha_cambridge_cxa')
+    def _send_mqtt_volume_message(self, message):
+        self.client.publish('media/cxa81/command/volume', message)
+
+    def _send_mqtt_command_message(self, message):
+        self.client.publish('media/cxa81/command/command', message)
 
     def volume_up(self):
         _LOGGER.debug("Sending VOLUME UP")
-        self._send_mqtt_message('VOLUME_UP')
+        self._send_mqtt_volume_message('VOLUME_UP')
 
     def volume_down(self):
         _LOGGER.debug("Sending VOLUME DOWN")
-        self._send_mqtt_message('VOLUME_DOWN')
+        self._send_mqtt_volume_message('VOLUME_DOWN')
